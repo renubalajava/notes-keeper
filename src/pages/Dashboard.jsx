@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+
 import {
   Search,
   Bell,
@@ -23,15 +24,22 @@ import {
   Send,
 } from "lucide-react";
 
+import {
+  getNotes,
+  createNote,
+} from "../services/api.js";
+
 function Dashboard() {
   const navigate = useNavigate();
 
   const [notes, setNotes] = useState([]);
+
   const [notebooks, setNotebooks] = useState([
     "Personal",
     "Work",
     "Study",
   ]);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [showProfile, setShowProfile] = useState(false);
   const [focusTasks, setFocusTasks] = useState([]);
@@ -42,209 +50,187 @@ function Dashboard() {
     name: "Renu",
     role: "Notes Keeper User",
   });
-const activeNotebookCount = new Set(
-  notes
-    .filter((note) => note?.archived !== true)
-    .map((note) => note?.notebook)
-    .filter(Boolean)
-).size;
+
+  const activeNotebookCount = new Set(
+    notes
+      .filter((note) => note?.archived !== true)
+      .map((note) => note?.notebook)
+      .filter(Boolean)
+  ).size;
+
   /* =========================
      LOAD DATA
   ========================= */
-/* =========================
-   LOAD DATA
-========================= */
 
-useEffect(() => {
-  const loadData = () => {
-    try {
-      // =========================
-      // CURRENT USER
-      // =========================
-
-      const savedUser = localStorage.getItem(
-        "notesKeeperCurrentUser"
-      );
-
-      let user = null;
-
-      if (savedUser) {
-        try {
-          user = JSON.parse(savedUser);
-        } catch {
-          user = null;
-        }
-      }
-
-      if (user) {
-        setCurrentUser({
-          id: user?.id || null,
-          email: user?.email || "",
-          name:
-            user?.name ||
-            user?.username ||
-            user?.email ||
-            "Renu",
-          role:
-            user?.role === "ADMIN" ||
-            user?.role === "admin"
-              ? "Administrator"
-              : "Notes Keeper User",
-        });
-      } else {
-        setCurrentUser({
-          id: null,
-          email: "",
-          name: "Renu",
-          role: "Notes Keeper User",
-        });
-      }
-
-      // =========================
-      // CURRENT USER ID
-      // =========================
-
-      const currentUserId =
-        user?.id || user?.email || null;
-
-      // =========================
-      // LOAD NOTES
-      // =========================
-
-      const savedNotes = localStorage.getItem(
-        "notesKeeperNotes"
-      );
-
-      let allNotes = [];
-
+  useEffect(() => {
+    const loadData = async () => {
       try {
-        allNotes = savedNotes
-          ? JSON.parse(savedNotes)
-          : [];
-      } catch {
-        allNotes = [];
-      }
+        /* =========================
+           CURRENT USER
+        ========================= */
 
-      if (!Array.isArray(allNotes)) {
-        allNotes = [];
-      }
+        const savedUser = localStorage.getItem(
+          "notesKeeperCurrentUser"
+        );
 
-      /*
-       * IMPORTANT:
-       *
-       * Never assign old notes without userId
-       * to the current user.
-       *
-       * Dashboard must only display notes that
-       * already belong to the logged-in user.
-       */
+        let user = null;
 
-      const userNotes = currentUserId
-        ? allNotes.filter(
+        if (savedUser) {
+          try {
+            user = JSON.parse(savedUser);
+          } catch {
+            user = null;
+          }
+        }
+
+        if (user) {
+          setCurrentUser({
+            id: user?.id || null,
+            email: user?.email || "",
+            name:
+              user?.name ||
+              user?.username ||
+              user?.email ||
+              "Renu",
+            role:
+              user?.role === "ADMIN" ||
+              user?.role === "admin"
+                ? "Administrator"
+                : "Notes Keeper User",
+          });
+        } else {
+          setCurrentUser({
+            id: null,
+            email: "",
+            name: "Renu",
+            role: "Notes Keeper User",
+          });
+        }
+
+        /* =========================
+           CURRENT USER ID
+        ========================= */
+
+        const currentUserId =
+          user?.id || user?.email || null;
+
+        /* =========================
+           LOAD NOTES FROM JSON SERVER
+        ========================= */
+
+        if (currentUserId) {
+          const allNotes = await getNotes();
+
+          const userNotes = allNotes.filter(
             (note) =>
               String(note?.userId) ===
-              String(currentUserId)
-          )
-        : [];
+                String(currentUserId) ||
+              String(note?.userId) ===
+                String(user?.email)
+          );
 
-      setNotes(userNotes);
+          setNotes(userNotes);
+        } else {
+          setNotes([]);
+        }
 
-      // =========================
-      // LOAD NOTEBOOKS
-      // =========================
+        /* =========================
+           LOAD NOTEBOOKS
+        ========================= */
 
-      const savedNotebooks =
-        localStorage.getItem(
-          "notesKeeperNotebooks"
+        const savedNotebooks =
+          localStorage.getItem(
+            "notesKeeperNotebooks"
+          );
+
+        if (savedNotebooks) {
+          try {
+            const parsed =
+              JSON.parse(savedNotebooks);
+
+            if (
+              Array.isArray(parsed) &&
+              parsed.length > 0
+            ) {
+              setNotebooks(parsed);
+            }
+          } catch {
+            setNotebooks([
+              "Personal",
+              "Work",
+              "Study",
+            ]);
+          }
+        }
+
+        /* =========================
+           LOAD FOCUS TASKS
+        ========================= */
+
+        const savedFocus =
+          localStorage.getItem(
+            "notesKeeperFocus"
+          );
+
+        if (savedFocus) {
+          try {
+            const parsed =
+              JSON.parse(savedFocus);
+
+            if (Array.isArray(parsed)) {
+              setFocusTasks(parsed);
+            }
+          } catch {
+            setFocusTasks([]);
+          }
+        }
+      } catch (error) {
+        console.error(
+          "Dashboard data loading failed:",
+          error
         );
 
-      if (savedNotebooks) {
-        try {
-          const parsed =
-            JSON.parse(savedNotebooks);
-
-          if (
-            Array.isArray(parsed) &&
-            parsed.length > 0
-          ) {
-            setNotebooks(parsed);
-          }
-        } catch {
-          setNotebooks([
-            "Personal",
-            "Work",
-            "Study",
-          ]);
-        }
+        setNotes([]);
       }
+    };
 
-      // =========================
-      // LOAD FOCUS TASKS
-      // =========================
+    loadData();
 
-      const savedFocus =
-        localStorage.getItem(
-          "notesKeeperFocus"
-        );
-
-      if (savedFocus) {
-        try {
-          const parsed =
-            JSON.parse(savedFocus);
-
-          if (Array.isArray(parsed)) {
-            setFocusTasks(parsed);
-          }
-        } catch {
-          setFocusTasks([]);
-        }
-      }
-    } catch (error) {
-      console.error(
-        "Dashboard data loading failed:",
-        error
-      );
-
-      setNotes([]);
-    }
-  };
-
-  loadData();
-
-  // Same-tab updates
-  window.addEventListener(
-    "notesUpdated",
-    loadData
-  );
-
-  window.addEventListener(
-    "notebooksUpdated",
-    loadData
-  );
-
-  // Cross-tab updates
-  window.addEventListener(
-    "storage",
-    loadData
-  );
-
-  return () => {
-    window.removeEventListener(
+    /* Same-tab updates */
+    window.addEventListener(
       "notesUpdated",
       loadData
     );
 
-    window.removeEventListener(
+    window.addEventListener(
       "notebooksUpdated",
       loadData
     );
 
-    window.removeEventListener(
+    /* Cross-tab updates */
+    window.addEventListener(
       "storage",
       loadData
     );
-  };
-}, []);
+
+    return () => {
+      window.removeEventListener(
+        "notesUpdated",
+        loadData
+      );
+
+      window.removeEventListener(
+        "notebooksUpdated",
+        loadData
+      );
+
+      window.removeEventListener(
+        "storage",
+        loadData
+      );
+    };
+  }, []);
+
   /* =========================
      TOAST
   ========================= */
@@ -262,38 +248,44 @@ useEffect(() => {
   ========================= */
 
   const totalNotes = notes.filter(
-  (note) => note?.archived !== true
-).length;
+    (note) => note?.archived !== true
+  ).length;
 
   const pinnedNotes = notes.filter(
-  (note) => note?.pinned === true
-).length;
+    (note) => note?.pinned === true
+  ).length;
 
   const archivedNotes = notes.filter(
     (note) => note?.archived === true
   ).length;
 
   const notebookStats = useMemo(() => {
-  return notebooks.map((name) => ({
-    name,
-    count: notes.filter(
-      (note) =>
-        note?.notebook === name &&
-        note?.archived !== true
-    ).length,
-  }));
-}, [notes, notebooks]);
+    return notebooks.map((name) => ({
+      name,
+      count: notes.filter(
+        (note) =>
+          note?.notebook === name &&
+          note?.archived !== true
+      ).length,
+    }));
+  }, [notes, notebooks]);
 
   const recentNotes = useMemo(() => {
     return notes
-      .filter((note) => note?.archived !== true)
+      .filter(
+        (note) => note?.archived !== true
+      )
       .sort(
         (a, b) =>
           new Date(
-            b?.updatedAt || b?.createdAt || 0
+            b?.updatedAt ||
+              b?.createdAt ||
+              0
           ) -
           new Date(
-            a?.updatedAt || a?.createdAt || 0
+            a?.updatedAt ||
+              a?.createdAt ||
+              0
           )
       )
       .slice(0, 4);
@@ -363,122 +355,75 @@ useEffect(() => {
 
   const deleteTask = (id) => {
     saveTasks(
-      focusTasks.filter((task) => task.id !== id)
+      focusTasks.filter(
+        (task) => task.id !== id
+      )
     );
   };
 
   /* =========================
      CREATE NOTE
+     JSON SERVER
   ========================= */
 
-  const handleCreateNote = () => {
-  const currentUserId =
-    currentUser?.id ||
-    currentUser?.email ||
-    null;
+  const handleCreateNote = async () => {
+    const currentUserId =
+      currentUser?.id ||
+      currentUser?.email ||
+      null;
 
-  if (!currentUserId) {
-    navigate("/login");
-    return;
-  }
-
-  const now = new Date().toISOString();
-
-  const note = {
-    id: Date.now(),
-
-    // IMPORTANT: owner of this note
-    userId: currentUserId,
-
-    title: "Untitled Note",
-    content: "",
-    notebook: "Personal",
-    tag: "Personal",
-    pinned: false,
-    archived: false,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  try {
-    const savedNotes =
-      localStorage.getItem("notesKeeperNotes");
-
-    let allNotes = [];
-
-    try {
-      allNotes = savedNotes
-        ? JSON.parse(savedNotes)
-        : [];
-    } catch {
-      allNotes = [];
+    if (!currentUserId) {
+      navigate("/login");
+      return;
     }
 
-    if (!Array.isArray(allNotes)) {
-      allNotes = [];
-    }
+    const now = new Date().toISOString();
 
-    // Preserve every user's notes
-    const updated = [note, ...allNotes];
-
-    localStorage.setItem(
-      "notesKeeperNotes",
-      JSON.stringify(updated)
-    );
-
-    // Dashboard shows only current user's notes
-    setNotes((previousNotes) => [
-      note,
-      ...previousNotes,
-    ]);
-
-    window.dispatchEvent(
-      new Event("notesUpdated")
-    );
-
-    navigate("/notes");
-  } catch (error) {
-    console.error(
-      "Failed to create note:",
-      error
-    );
-  }
-};
-
-   
-  /* =========================
-     LOGOUT
-  ========================= */
-
-  const handleLogout = () => {
-    localStorage.removeItem("notesKeeperLoggedIn");
-    localStorage.removeItem("notesKeeperCurrentUser");
-
-    navigate("/login");
-  };
-
-  const initial =
-    currentUser?.name?.charAt(0)?.toUpperCase() || "R";
-
-  const formatDate = (date) => {
-    if (!date) return "";
+    const note = {
+      id: Date.now(),
+      userId: currentUserId,
+      title: "Untitled Note",
+      content: "",
+      notebook: "Personal",
+      tag: "Personal",
+      pinned: false,
+      archived: false,
+      createdAt: now,
+      updatedAt: now,
+    };
 
     try {
-      return new Date(date).toLocaleDateString(
-        "en-US",
-        {
-          month: "short",
-          day: "numeric",
-        }
+      /* SAVE DIRECTLY TO JSON SERVER */
+      const savedNote = await createNote(note);
+
+      setNotes((previousNotes) => [
+        savedNote || note,
+        ...previousNotes,
+      ]);
+
+      window.dispatchEvent(
+        new Event("notesUpdated")
       );
-    } catch {
-      return "";
+
+      navigate("/notes");
+    } catch (error) {
+      console.error(
+        "Failed to create note:",
+        error
+      );
+
+      showToast(
+        "Unable to create note"
+      );
     }
   };
+
+  /* =========================
+     DASHBOARD UI
+  ========================= */
 
   return (
-    <div className="h-screen overflow-hidden bg-[#f7f5ff] text-[#21163d]">
-
+    <>
       {/* =========================
           SIDEBAR
       ========================= */}
@@ -536,6 +481,7 @@ useEffect(() => {
                 SMART WORKSPACE
               </p>
             </div>
+
           </div>
 
           <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[.18em] text-purple-300">
@@ -570,6 +516,7 @@ useEffect(() => {
               label="Archived"
               badge={archivedNotes}
             />
+
           </nav>
 
           {/* NOTEBOOKS */}
@@ -582,260 +529,195 @@ useEffect(() => {
                 Notebooks
               </p>
 
-              <button
-                type="button"
-                onClick={() => navigate("/notes")}
-                className="text-purple-300 hover:text-white"
-              >
-                <Plus size={16} />
-              </button>
+              <span className="text-xs text-purple-300">
+                {activeNotebookCount}
+              </span>
+
             </div>
 
             <div className="space-y-1">
 
-              {notebooks.slice(0, 4).map(
-                (notebook, index) => {
-
-                  const count =
-                    notebookStats.find(
-                      (item) =>
-                        item.name === notebook
-                    )?.count || 0;
-
-                  const colors = [
-                    "bg-pink-400",
-                    "bg-blue-500",
-                    "bg-violet-500",
-                    "bg-emerald-500",
-                  ];
-
-                  return (
-                    <button
-                      key={notebook}
-                      type="button"
-                      onClick={() =>
-                        navigate(
-                          `/notebook/${encodeURIComponent(
-                            notebook
-                          )}`
-                        )
-                      }
-                      className="
-                        flex
-                        w-full
-                        items-center
-                        gap-3
-                        rounded-xl
-                        px-3
-                        py-2
-                        text-left
-                        text-sm
-                        transition
-                        hover:bg-white/10
-                      "
-                    >
-                      <span
-                        className={`h-2.5 w-2.5 rounded-full ${
-                          colors[index % colors.length]
-                        }`}
+              {notebookStats.map(
+                (notebook) => (
+                  <Link
+                    key={notebook.name}
+                    to={`/notes?notebook=${encodeURIComponent(
+                      notebook.name
+                    )}`}
+                    className="
+                      flex
+                      items-center
+                      justify-between
+                      rounded-xl
+                      px-3
+                      py-2
+                      text-sm
+                      text-purple-100
+                      transition
+                      hover:bg-white/10
+                    "
+                  >
+                    <span className="flex items-center gap-2">
+                      <Folder
+                        size={16}
                       />
+                      {notebook.name}
+                    </span>
 
-                      <span className="flex-1 truncate">
-                        {notebook}
-                      </span>
-
-                      <span className="text-xs text-purple-300">
-                        {count}
-                      </span>
-                    </button>
-                  );
-                }
-              )}
-            </div>
-          </div>
-
-          {/* SMART TOOLS */}
-
-          <div className="mt-5">
-
-            <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[.18em] text-purple-300">
-              Smart Tools
-            </p>
-
-            <SidebarItem
-              to="/ai-assistant"
-              icon={<Sparkles size={19} />}
-              label="AI Assistant"
-              badgeText="NEW"
-            />
-
-            <button
-              type="button"
-              onClick={() =>
-                showToast(
-                  "Voice Note is available inside Note Editor."
+                    <span className="text-xs text-purple-300">
+                      {notebook.count}
+                    </span>
+                  </Link>
                 )
-              }
-              className="
-                flex
-                w-full
-                items-center
-                gap-3
-                rounded-xl
-                px-3
-                py-2
-                text-sm
-                text-white/85
-                transition
-                hover:bg-white/10
-              "
-            >
-              <Mic size={19} />
-              Voice Notes
-            </button>
+              )}
+
+            </div>
+
           </div>
+                    </div>
 
-          <div className="flex-1" />
+      
+      </aside>
 
-          {/* USER */}
+      {/* =========================
+          MAIN CONTENT
+      ========================= */}
 
-          <div
-            className="
-              rounded-2xl
-              border
-              border-white/10
-              bg-white/10
-              p-3
-            "
-          >
-            <div className="flex items-center gap-3">
+      <main className="min-h-screen bg-[#f8f6ff] lg:pl-[260px]">
+        <section className="mx-auto max-w-[1600px] px-4 py-4 sm:px-6 lg:px-7">
 
-              <div
+          {/* =========================
+              TOP BAR
+          ========================= */}
+
+          <div className="mb-4 flex items-center justify-between gap-3">
+
+            <div className="flex min-w-0 items-center gap-3">
+
+              <div className="lg:hidden">
+                <Link
+                  to="/dashboard"
+                  className="
+                    flex
+                    h-10
+                    w-10
+                    items-center
+                    justify-center
+                    rounded-xl
+                    bg-gradient-to-br
+                    from-violet-600
+                    to-fuchsia-500
+                    text-white
+                    shadow-lg
+                  "
+                >
+                  📝
+                </Link>
+              </div>
+
+              <div className="hidden min-w-0 sm:block">
+                <p className="text-[10px] font-bold uppercase tracking-[.18em] text-violet-500">
+                  Workspace
+                </p>
+
+                <h2 className="truncate text-lg font-black text-[#261641]">
+                  Dashboard
+                </h2>
+              </div>
+
+            </div>
+
+            <div className="flex flex-1 items-center justify-end gap-2">
+
+              {/* SEARCH */}
+
+              <form
+                onSubmit={handleSearch}
+                className="
+                  hidden
+                  h-10
+                  w-full
+                  max-w-[390px]
+                  items-center
+                  gap-2
+                  rounded-full
+                  border
+                  border-violet-100
+                  bg-white
+                  px-4
+                  shadow-sm
+                  md:flex
+                "
+              >
+                <Search
+                  size={17}
+                  className="shrink-0 text-slate-400"
+                />
+
+                <input
+                  value={searchTerm}
+                  onChange={(e) =>
+                    setSearchTerm(e.target.value)
+                  }
+                  placeholder="Search your notes..."
+                  className="
+                    min-w-0
+                    flex-1
+                    bg-transparent
+                    text-xs
+                    outline-none
+                    placeholder:text-slate-400
+                  "
+                />
+
+                <button
+                  type="submit"
+                  className="
+                    rounded-full
+                    bg-violet-50
+                    px-3
+                    py-1
+                    text-[10px]
+                    font-bold
+                    text-violet-600
+                  "
+                >
+                  Search
+                </button>
+              </form>
+
+              {/* MOBILE SEARCH */}
+
+              <button
+                type="button"
+                onClick={() => navigate("/notes")}
                 className="
                   flex
                   h-10
                   w-10
-                  shrink-0
                   items-center
                   justify-center
                   rounded-full
-                  bg-gradient-to-br
-                  from-fuchsia-500
-                  to-violet-600
-                  font-bold
+                  border
+                  border-violet-100
+                  bg-white
+                  text-violet-600
+                  shadow-sm
+                  md:hidden
                 "
               >
-                {initial}
-              </div>
+                <Search size={17} />
+              </button>
 
-              <div className="min-w-0">
-
-                <p className="truncate text-sm font-bold">
-                  {currentUser.name}
-                </p>
-
-                <p className="text-[11px] text-purple-300">
-                  {currentUser.role}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="
-              mt-2
-              flex
-              w-full
-              items-center
-              gap-3
-              rounded-xl
-              px-3
-              py-2
-              text-sm
-              text-white/80
-              transition
-              hover:bg-white/10
-            "
-          >
-            <LogOut size={18} />
-            Log Out
-          </button>
-        </div>
-      </aside>
-
-      {/* =========================
-          MAIN
-      ========================= */}
-
-      <main className="h-screen overflow-hidden lg:ml-[260px]">
-
-        {/* HEADER */}
-
-        <header className="h-[72px] px-5 pt-3 lg:px-7">
-
-          <div
-            className="
-              flex
-              h-[56px]
-              items-center
-              justify-between
-              rounded-[22px]
-              border
-              border-violet-100
-              bg-white/90
-              px-4
-              shadow-[0_5px_25px_rgba(82,42,140,.07)]
-              backdrop-blur
-            "
-          >
-
-            <form
-              onSubmit={handleSearch}
-              className="
-                flex
-                h-11
-                w-[55%]
-                max-w-[660px]
-                items-center
-                rounded-full
-                border
-                border-violet-100
-                bg-[#faf8ff]
-                px-4
-              "
-            >
-              <Search
-                size={20}
-                className="text-violet-500"
-              />
-
-              <input
-                value={searchTerm}
-                onChange={(e) =>
-                  setSearchTerm(e.target.value)
-                }
-                placeholder="Search notes, notebooks, or ideas..."
-                className="
-                  ml-3
-                  w-full
-                  bg-transparent
-                  text-sm
-                  outline-none
-                  placeholder:text-slate-400
-                "
-              />
-
-              <span className="hidden rounded-full bg-violet-100 px-3 py-1 text-[10px] font-bold text-violet-600 md:block">
-                Ctrl K
-              </span>
-            </form>
-
-            <div className="flex items-center gap-3">
+              {/* NOTIFICATION */}
 
               <button
                 type="button"
+                onClick={() =>
+                  showToast(
+                    "You are all caught up!"
+                  )
+                }
                 className="
                   relative
                   flex
@@ -847,189 +729,211 @@ useEffect(() => {
                   border
                   border-violet-100
                   bg-white
+                  text-violet-600
+                  shadow-sm
                 "
               >
-                <Bell size={18} />
+                <Bell size={17} />
 
-                <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-pink-500" />
-              </button>
-
-              <div className="h-7 w-px bg-violet-100" />
-
-              <button
-                type="button"
-                onClick={() =>
-                  setShowProfile(!showProfile)
-                }
-                className="
-                  flex
-                  items-center
-                  gap-2
-                  rounded-full
-                  border
-                  border-violet-100
-                  bg-white
-                  px-2
-                  py-1.5
-                  pr-3
-                "
-              >
                 <span
                   className="
-                    flex
-                    h-9
-                    w-9
-                    items-center
-                    justify-center
+                    absolute
+                    right-2
+                    top-2
+                    h-2
+                    w-2
                     rounded-full
-                    bg-gradient-to-br
-                    from-violet-500
-                    to-fuchsia-500
-                    font-bold
-                    text-white
+                    bg-fuchsia-500
                   "
-                >
-                  {initial}
-                </span>
-
-                <span className="hidden text-sm font-bold md:block">
-                  {currentUser.name}
-                </span>
-
-                <ChevronDown size={15} />
+                />
               </button>
 
-              {showProfile && (
-                <div
+              {/* PROFILE */}
+
+              <div className="relative">
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setShowProfile(
+                      (value) => !value
+                    )
+                  }
                   className="
-                    absolute
-                    right-7
-                    top-[68px]
-                    z-50
-                    w-48
-                    rounded-2xl
+                    flex
+                    h-10
+                    items-center
+                    gap-2
+                    rounded-full
                     border
                     border-violet-100
                     bg-white
-                    p-2
-                    shadow-xl
+                    px-2
+                    shadow-sm
                   "
                 >
-                  <Link
-                    to="/dashboard"
-                    className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm hover:bg-violet-50"
-                  >
-                    <Home size={15} />
-                    Dashboard
-                  </Link>
 
-                  <button
-                    onClick={handleLogout}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-red-500 hover:bg-red-50"
+                  <div
+                    className="
+                      flex
+                      h-8
+                      w-8
+                      items-center
+                      justify-center
+                      rounded-full
+                      bg-gradient-to-br
+                      from-violet-500
+                      to-fuchsia-500
+                      text-xs
+                      font-black
+                      text-white
+                    "
                   >
-                    <LogOut size={15} />
-                    Logout
-                  </button>
-                </div>
-              )}
+                    {(currentUser?.name ||
+                      "R")
+                      .charAt(0)
+                      .toUpperCase()}
+                  </div>
+
+                  <div className="hidden text-left sm:block">
+                    <p className="max-w-[100px] truncate text-[10px] font-black text-slate-700">
+                      {currentUser?.name ||
+                        "Renu"}
+                    </p>
+
+                    <p className="text-[8px] text-slate-400">
+                      {currentUser?.role ||
+                        "Notes Keeper User"}
+                    </p>
+                  </div>
+
+                  <ChevronDown
+                    size={14}
+                    className="hidden text-slate-400 sm:block"
+                  />
+
+                </button>
+
+                {showProfile && (
+                  <div
+                    className="
+                      absolute
+                      right-0
+                      top-12
+                      z-[80]
+                      w-52
+                      rounded-2xl
+                      border
+                      border-violet-100
+                      bg-white
+                      p-2
+                      shadow-2xl
+                    "
+                  >
+
+                    <div className="rounded-xl bg-violet-50 p-3">
+                      <p className="text-xs font-black text-slate-800">
+                        {currentUser?.name ||
+                          "Renu"}
+                      </p>
+
+                      <p className="mt-1 truncate text-[10px] text-slate-400">
+                        {currentUser?.email ||
+                          "Notes Keeper User"}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        localStorage.removeItem(
+                          "notesKeeperLoggedIn"
+                        );
+
+                        localStorage.removeItem(
+                          "notesKeeperCurrentUser"
+                        );
+
+                        navigate("/login");
+                      }}
+                      className="
+                        mt-2
+                        flex
+                        h-10
+                        w-full
+                        items-center
+                        gap-2
+                        rounded-xl
+                        px-3
+                        text-left
+                        text-xs
+                        font-bold
+                        text-red-500
+                        hover:bg-red-50
+                      "
+                    >
+                      <LogOut size={15} />
+                      Logout
+                    </button>
+
+                  </div>
+                )}
+
+              </div>
+
             </div>
           </div>
-        </header>
 
-        {/* CONTENT */}
-
-        <section
-          className="
-            h-[calc(100vh-72px)]
-            overflow-hidden
-            px-5
-            pb-4
-            pt-2
-            lg:px-7
-          "
-        >
-
-          {/* HERO */}
+          {/* =========================
+              WELCOME HERO
+          ========================= */}
 
           <div
             className="
               relative
               mb-3
-              h-[255px]
+              h-[225px]
               overflow-hidden
               rounded-[28px]
-              border
-              border-violet-100
               bg-gradient-to-r
-              from-[#f1e7ff]
-              via-[#eadcff]
-              to-[#dfceff]
-              shadow-[0_15px_40px_rgba(89,42,150,.12)]
+              from-[#eee5ff]
+              via-[#f8edff]
+              to-[#ffe8f5]
+              shadow-[0_10px_30px_rgba(75,35,130,.08)]
             "
           >
 
             <div
               className="
-                relative
-                z-20
-                flex
+                absolute
+                left-0
+                top-0
                 h-full
-                w-[58%]
-                flex-col
-                justify-center
-                px-8
-                xl:px-10
+                w-[55%]
+                bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,.9),transparent_45%)]
               "
-            >
+            />
 
-              <div
-                className="
-                  mb-3
-                  w-fit
-                  rounded-full
-                  border
-                  border-violet-200
-                  bg-white/70
-                  px-4
-                  py-1.5
-                  text-xs
-                  font-bold
-                  text-violet-800
-                "
-              >
-                Good Morning, {currentUser.name} ☀️
+            <div className="relative z-20 flex h-full w-[55%] flex-col justify-center px-6 sm:px-8">
+
+              <div className="mb-2 inline-flex w-fit items-center gap-2 rounded-full bg-white/75 px-3 py-1.5 text-[9px] font-black uppercase tracking-[.15em] text-violet-600 shadow-sm">
+                <Sparkles size={12} />
+                Your Creative Space
               </div>
 
-              <h1
-                className="
-                  text-[42px]
-                  font-black
-                  leading-[.98]
-                  tracking-tight
-                  text-[#241044]
-                  xl:text-[46px]
-                "
-              >
-                Welcome to
-                <br />
-
-                <span
-                  className="
-                    bg-gradient-to-r
-                    from-[#6324e9]
-                    via-[#8127ef]
-                    to-[#d02ee8]
-                    bg-clip-text
-                    text-transparent
-                  "
-                >
-                  Notes Keeper
+              <h1 className="max-w-[500px] text-2xl font-black leading-tight text-[#261641] sm:text-3xl">
+                Welcome back,{" "}
+                <span className="text-violet-600">
+                  {currentUser?.name ||
+                    "Renu"}
                 </span>
+                !
               </h1>
 
-              <p className="mt-3 max-w-[470px] text-[14px] leading-6 text-[#44336b]">
-                Capture ideas, organize your thoughts,
-                and make meaningful progress every day.
+              <p className="mt-2 max-w-[480px] text-xs leading-5 text-slate-500 sm:text-sm">
+                Capture your ideas, organize your
+                thoughts and turn your notes into
+                something amazing.
               </p>
 
               <div className="mt-4 flex gap-3">
@@ -1077,6 +981,7 @@ useEffect(() => {
                   <Sparkles size={17} />
                   Explore AI
                 </Link>
+
               </div>
             </div>
 
@@ -1130,14 +1035,18 @@ useEffect(() => {
               </p>
 
               <p className="mt-1.5 text-xs font-bold leading-5 text-[#261641]">
-                “Your ideas deserve a beautiful home.”
+                “Your ideas deserve a beautiful
+                home.”
               </p>
             </div>
+
           </div>
 
-          {/* STATS */}
+          {/* =========================
+              STATS
+          ========================= */}
 
-          <div className="mb-3 grid grid-cols-4 gap-3">
+          <div className="mb-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
 
             <StatCard
               icon={<FileText size={21} />}
@@ -1158,7 +1067,7 @@ useEffect(() => {
             <StatCard
               icon={<BookOpen size={21} />}
               title="Notebooks"
-                value={activeNotebookCount}
+              value={activeNotebookCount}
               text="Collections"
               type="blue"
             />
@@ -1170,11 +1079,14 @@ useEffect(() => {
               text="Safely stored"
               type="orange"
             />
+
           </div>
 
-          {/* MIDDLE */}
+          {/* =========================
+              MIDDLE
+          ========================= */}
 
-          <div className="mb-3 grid h-[205px] grid-cols-[1.25fr_1fr_1fr] gap-3">
+          <div className="mb-3 grid min-h-[205px] grid-cols-1 gap-3 xl:grid-cols-[1.25fr_1fr_1fr]">
 
             {/* RECENT NOTES */}
 
@@ -1194,76 +1106,93 @@ useEffect(() => {
                     text="No notes yet"
                   />
                 ) : (
-                  recentNotes.map((note, index) => (
-                    <div
-                      key={note.id || index}
-                      className="
-                        flex
-                        items-center
-                        gap-3
-                        rounded-xl
-                        px-2
-                        py-2
-                        hover:bg-violet-50
-                      "
-                    >
+                  recentNotes.map(
+                    (note, index) => (
                       <div
-                        className={`
+                        key={
+                          note.id || index
+                        }
+                        className="
                           flex
-                          h-9
-                          w-9
-                          shrink-0
                           items-center
-                          justify-center
+                          gap-3
                           rounded-xl
-                          ${
-                            index % 4 === 0
-                              ? "bg-amber-100 text-amber-600"
-                              : index % 4 === 1
-                              ? "bg-violet-100 text-violet-600"
-                              : index % 4 === 2
-                              ? "bg-pink-100 text-pink-600"
-                              : "bg-blue-100 text-blue-600"
-                          }
-                        `}
+                          px-2
+                          py-2
+                          hover:bg-violet-50
+                        "
                       >
-                        <FileText size={16} />
+
+                        <div
+                          className={`
+                            flex
+                            h-9
+                            w-9
+                            shrink-0
+                            items-center
+                            justify-center
+                            rounded-xl
+                            ${
+                              index % 4 === 0
+                                ? "bg-amber-100 text-amber-600"
+                                : index % 4 === 1
+                                ? "bg-violet-100 text-violet-600"
+                                : index % 4 === 2
+                                ? "bg-pink-100 text-pink-600"
+                                : "bg-blue-100 text-blue-600"
+                            }
+                          `}
+                        >
+                          <FileText size={16} />
+                        </div>
+
+                        <Link
+                          to="/notes"
+                          className="min-w-0 flex-1"
+                        >
+                          <p className="truncate text-xs font-bold">
+                            {note.title ||
+                              "Untitled Note"}
+                          </p>
+
+                          <p className="truncate text-[10px] text-slate-400">
+                            {note.content
+                              ? note.content
+                                  .replace(
+                                    /<[^>]*>/g,
+                                    ""
+                                  )
+                                  .replace(
+                                    /&nbsp;/g,
+                                    " "
+                                  )
+                                  .slice(
+                                    0,
+                                    45
+                                  )
+                              : "No content"}
+                          </p>
+                        </Link>
+
+                        <span className="hidden text-[9px] text-slate-400 xl:block">
+                          {formatDate(
+                            note.updatedAt ||
+                              note.createdAt
+                          )}
+                        </span>
+
+                        <MoreVertical
+                          size={14}
+                          className="text-violet-400"
+                        />
+
                       </div>
-
-                      <Link
-                        to="/notes"
-                        className="min-w-0 flex-1"
-                      >
-                        <p className="truncate text-xs font-bold">
-                          {note.title ||
-                            "Untitled Note"}
-                        </p>
-
-                        <p className="truncate text-[10px] text-slate-400">
-                          {note.content
-  ? note.content
-      .replace(/<[^>]*>/g, "")
-      .replace(/&nbsp;/g, " ")
-      .slice(0, 45)
-  : "No content"}
-                        </p>
-                      </Link>
-
-                      <span className="hidden text-[9px] text-slate-400 xl:block">
-                        {formatDate(
-                          note.updatedAt ||
-                            note.createdAt
-                        )}
-                      </span>
-
-                      <MoreVertical
-                        size={14}
-                        className="text-violet-400"
-                      />
-                    </div>
-                  ))
+                    )
+                  )
                 )}
+
               </div>
+
             </Panel>
 
             {/* FOCUS */}
@@ -1284,12 +1213,22 @@ useEffect(() => {
                     .map((task) => (
                       <div
                         key={task.id}
-                        className="flex items-center gap-2 border-b border-violet-50 py-1.5"
+                        className="
+                          flex
+                          items-center
+                          gap-2
+                          border-b
+                          border-violet-50
+                          py-1.5
+                        "
                       >
+
                         <button
                           type="button"
                           onClick={() =>
-                            toggleTask(task.id)
+                            toggleTask(
+                              task.id
+                            )
                           }
                           className={
                             task.completed
@@ -1298,18 +1237,28 @@ useEffect(() => {
                           }
                         >
                           {task.completed ? (
-                            <CheckSquare size={17} />
+                            <CheckSquare
+                              size={17}
+                            />
                           ) : (
-                            <Square size={17} />
+                            <Square
+                              size={17}
+                            />
                           )}
                         </button>
 
                         <span
-                          className={`min-w-0 flex-1 truncate text-[11px] ${
-                            task.completed
-                              ? "text-slate-400 line-through"
-                              : "text-slate-700"
-                          }`}
+                          className={`
+                            min-w-0
+                            flex-1
+                            truncate
+                            text-[11px]
+                            ${
+                              task.completed
+                                ? "text-slate-400 line-through"
+                                : "text-slate-700"
+                            }
+                          `}
                         >
                           {task.text}
                         </span>
@@ -1317,12 +1266,15 @@ useEffect(() => {
                         <button
                           type="button"
                           onClick={() =>
-                            deleteTask(task.id)
+                            deleteTask(
+                              task.id
+                            )
                           }
                           className="text-slate-300 hover:text-red-500"
                         >
                           <X size={12} />
                         </button>
+
                       </div>
                     ))}
 
@@ -1331,6 +1283,7 @@ useEffect(() => {
                       Add your focus task
                     </p>
                   )}
+
                 </div>
 
                 <div className="mt-2 flex gap-2">
@@ -1338,7 +1291,9 @@ useEffect(() => {
                   <input
                     value={newTask}
                     onChange={(e) =>
-                      setNewTask(e.target.value)
+                      setNewTask(
+                        e.target.value
+                      )
                     }
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
@@ -1377,8 +1332,10 @@ useEffect(() => {
                   >
                     <Plus size={16} />
                   </button>
+
                 </div>
               </div>
+
             </Panel>
 
             {/* AI */}
@@ -1413,6 +1370,7 @@ useEffect(() => {
                     Smart help for your notes
                   </p>
                 </div>
+
               </div>
 
               <div className="mt-2 space-y-1.5">
@@ -1436,12 +1394,15 @@ useEffect(() => {
                   icon={<CheckSquare size={14} />}
                   text="Create to-do list"
                 />
+
               </div>
 
               <button
                 type="button"
                 onClick={() =>
-                  navigate("/ai-assistant")
+                  navigate(
+                    "/ai-assistant"
+                  )
                 }
                 className="
                   mt-2
@@ -1463,12 +1424,16 @@ useEffect(() => {
                 <Send size={13} />
                 Ask AI
               </button>
+
             </Panel>
+
           </div>
 
-          {/* BOTTOM */}
+          {/* =========================
+              BOTTOM
+          ========================= */}
 
-          <div className="grid h-[145px] grid-cols-[1.3fr_1fr] gap-3">
+          <div className="grid min-h-[145px] grid-cols-1 gap-3 xl:grid-cols-[1.3fr_1fr]">
 
             {/* NOTEBOOKS */}
 
@@ -1480,7 +1445,7 @@ useEffect(() => {
                 link="/notes"
               />
 
-              <div className="mt-2 grid grid-cols-4 gap-2">
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
 
                 {notebookStats
                   .slice(0, 3)
@@ -1517,6 +1482,7 @@ useEffect(() => {
                           hover:bg-violet-50
                         "
                       >
+
                         <div
                           className={`
                             flex
@@ -1534,6 +1500,7 @@ useEffect(() => {
                         </div>
 
                         <div className="min-w-0">
+
                           <p className="truncate text-[11px] font-bold">
                             {item.name}
                           </p>
@@ -1541,7 +1508,9 @@ useEffect(() => {
                           <p className="mt-1 text-[9px] text-slate-400">
                             {item.count} notes
                           </p>
+
                         </div>
+
                       </button>
                     );
                   })}
@@ -1570,7 +1539,9 @@ useEffect(() => {
                     Add New
                   </span>
                 </button>
+
               </div>
+
             </Panel>
 
             {/* QUICK ACTIONS */}
@@ -1582,12 +1553,14 @@ useEffect(() => {
                 title="Quick Actions"
               />
 
-              <div className="mt-2 grid grid-cols-4 gap-2">
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
 
                 <QuickAction
                   icon={<FileText size={18} />}
                   label="New Note"
-                  onClick={handleCreateNote}
+                  onClick={
+                    handleCreateNote
+                  }
                 />
 
                 <QuickAction
@@ -1604,7 +1577,9 @@ useEffect(() => {
                   icon={<Sparkles size={18} />}
                   label="AI"
                   onClick={() =>
-                    navigate("/ai-assistant")
+                    navigate(
+                      "/ai-assistant"
+                    )
                   }
                 />
 
@@ -1615,13 +1590,19 @@ useEffect(() => {
                     navigate("/notes")
                   }
                 />
+
               </div>
+
             </Panel>
+
           </div>
+
         </section>
       </main>
 
-      {/* MOBILE NAV */}
+      {/* =========================
+          MOBILE NAV
+      ========================= */}
 
       <div
         className="
@@ -1642,6 +1623,7 @@ useEffect(() => {
           lg:hidden
         "
       >
+
         <MobileNav
           to="/dashboard"
           icon={<LayoutDashboard size={18} />}
@@ -1681,9 +1663,12 @@ useEffect(() => {
           to="/archive"
           icon={<Archive size={18} />}
         />
+
       </div>
 
-      {/* TOAST */}
+      {/* =========================
+          TOAST
+      ========================= */}
 
       {toast && (
         <div
@@ -1706,7 +1691,8 @@ useEffect(() => {
           {toast}
         </div>
       )}
-    </div>
+
+    </>
   );
 }
 
@@ -1780,16 +1766,19 @@ function StatCard({
       icon: "bg-violet-600",
       text: "text-violet-600",
     },
+
     pink: {
       bg: "bg-[#fff1f8]",
       icon: "bg-pink-500",
       text: "text-pink-500",
     },
+
     blue: {
       bg: "bg-[#eef6ff]",
       icon: "bg-blue-500",
       text: "text-blue-500",
     },
+
     orange: {
       bg: "bg-[#fff6ed]",
       icon: "bg-orange-500",
@@ -1814,6 +1803,7 @@ function StatCard({
         shadow-sm
       `}
     >
+
       <div
         className={`
           flex
@@ -1832,6 +1822,7 @@ function StatCard({
       </div>
 
       <div className="min-w-0">
+
         <p className="text-[11px] font-semibold text-slate-500">
           {title}
         </p>
@@ -1845,12 +1836,14 @@ function StatCard({
         >
           {text}
         </p>
+
       </div>
 
       <ArrowRight
         size={15}
         className={`ml-auto hidden ${style.text} sm:block`}
       />
+
     </div>
   );
 }
@@ -1890,6 +1883,7 @@ function PanelHeader({
     <div className="flex items-center justify-between">
 
       <div className="flex items-center gap-2">
+
         <span className="text-violet-600">
           {icon}
         </span>
@@ -1897,6 +1891,7 @@ function PanelHeader({
         <h2 className="text-sm font-black">
           {title}
         </h2>
+
       </div>
 
       {link && (
@@ -1915,6 +1910,7 @@ function PanelHeader({
           <ArrowRight size={12} />
         </Link>
       )}
+
     </div>
   );
 }
@@ -1926,11 +1922,13 @@ function PanelHeader({
 function EmptyState({ icon, text }) {
   return (
     <div className="flex h-[135px] flex-col items-center justify-center text-slate-400">
+
       {icon}
 
       <p className="mt-2 text-xs">
         {text}
       </p>
+
     </div>
   );
 }
@@ -2001,6 +1999,7 @@ function QuickAction({
         hover:shadow-md
       "
     >
+
       <div
         className="
           mb-1
@@ -2019,6 +2018,7 @@ function QuickAction({
       <span className="text-[10px] font-bold">
         {label}
       </span>
+
     </button>
   );
 }
@@ -2045,6 +2045,25 @@ function MobileNav({ to, icon }) {
       {icon}
     </Link>
   );
+}
+
+/* =========================================================
+   DATE FORMAT
+========================================================= */
+
+function formatDate(dateValue) {
+  if (!dateValue) return "";
+
+  const date = new Date(dateValue);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+  });
 }
 
 export default Dashboard;

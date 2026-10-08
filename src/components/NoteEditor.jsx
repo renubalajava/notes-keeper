@@ -60,12 +60,10 @@ function NoteEditor({
     note?.tag || ""
   );
 
-  // COLOUR TAG
   const [tagColor, setTagColor] = useState(
     note?.tagColor || "#8B5CF6"
   );
 
-  // NOTE BACKGROUND COLOR
   const [noteColor, setNoteColor] = useState(
     note?.noteColor || "#FFFFFF"
   );
@@ -420,14 +418,15 @@ function NoteEditor({
       };
 
       try {
+        // IMPORTANT:
+        // Auto-save does NOT close editor.
         await onSaveRef.current(
-          updatedNote,
-          {
-            autoSave: true,
-          }
+          updatedNote
         );
 
         setLastEdited(updatedTime);
+
+        skipAutoSaveRef.current = true;
       } catch (error) {
         console.error(
           "Auto-save failed:",
@@ -493,6 +492,11 @@ function NoteEditor({
       setLastEdited(updatedTime);
 
       skipAutoSaveRef.current = true;
+
+      // MANUAL SAVE → CLOSE
+      if (typeof onClose === "function") {
+        onClose();
+      }
     } catch (error) {
       console.error(
         "Manual save failed:",
@@ -781,6 +785,36 @@ function NoteEditor({
   };
 
   // =======================================================
+  // CLOSE EDITOR
+  // =======================================================
+
+  const handleCloseEditor = () => {
+    // Stop voice recognition
+    try {
+      recognitionRef.current?.stop();
+    } catch {
+      // already stopped
+    }
+
+    // Stop text-to-speech
+    if (
+      typeof window !== "undefined" &&
+      window.speechSynthesis
+    ) {
+      window.speechSynthesis.cancel();
+    }
+
+    setIsListening(false);
+    setActiveTool("none");
+
+    // Close editor ONLY when
+    // X or Cancel/Save calls this.
+    if (typeof onClose === "function") {
+      onClose();
+    }
+  };
+
+  // =======================================================
   // CLEANUP
   // =======================================================
 
@@ -814,80 +848,301 @@ function NoteEditor({
 
   const characterCount =
     plainText.length;
+  // =======================================================
+  // COLOR OPTIONS
+  // =======================================================
+
+  const noteColors = [
+    "#FFFFFF",
+    "#FEF3C7",
+    "#DCFCE7",
+    "#DBEAFE",
+    "#FCE7F3",
+    "#EDE9FE",
+    "#F3F4F6",
+  ];
+
+  const tagColors = [
+    "#8B5CF6",
+    "#EC4899",
+    "#3B82F6",
+    "#10B981",
+    "#F59E0B",
+    "#EF4444",
+    "#06B6D4",
+  ];
 
   // =======================================================
   // RENDER
   // =======================================================
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#12052b]/75 p-3 backdrop-blur-md sm:p-5">
-      <div className="flex max-h-[95vh] w-full max-w-[1200px] flex-col overflow-hidden rounded-[30px] border border-white/40 bg-white shadow-[0_30px_100px_rgba(45,10,90,0.35)]">
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+    >
+      <div
+        className="flex max-h-[95vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl"
+      >
+        {/* =================================================
+            HEADER
+        ================================================= */}
 
-        {/* HEADER */}
-
-        <header className="relative overflow-hidden border-b border-violet-100 bg-gradient-to-r from-[#f6f1ff] via-white to-[#fff1fc] px-5 py-4 sm:px-7">
-
-          <div className="absolute -right-16 -top-20 h-48 w-48 rounded-full bg-violet-300/20 blur-3xl" />
-
-          <div className="relative flex items-center justify-between gap-4">
-
-            <div className="flex min-w-0 items-center gap-3">
-
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-600 to-fuchsia-600 text-xl text-white shadow-lg shadow-violet-200">
-                ✦
-              </div>
-
-              <div className="min-w-0">
-
-                <div className="flex items-center gap-2">
-
-                  <h2 className="truncate text-lg font-extrabold text-slate-900 sm:text-xl">
-                    {note
-                      ? "Edit Note"
-                      : "New Note"}
-                  </h2>
-
-                  <span className="hidden rounded-full bg-emerald-100 px-2 py-1 text-[9px] font-bold text-emerald-700 sm:block">
-                    AUTO SAVE
-                  </span>
-
-                </div>
-
-                <p className="mt-1 text-[10px] text-slate-400 sm:text-xs">
-                  Last edited • {lastEdited}
-                </p>
-
-              </div>
-
+        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-xl">
+              📝
             </div>
 
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-xl font-bold text-slate-400 shadow-sm transition hover:bg-violet-100 hover:text-violet-700"
-            >
-              ×
-            </button>
+            <div>
+              <h2 className="text-lg font-bold text-gray-800">
+                {note?.id
+                  ? "Edit Note"
+                  : "Create Note"}
+              </h2>
 
+              <p className="text-xs text-gray-500">
+                {lastEdited
+                  ? `Last edited: ${lastEdited}`
+                  : "Start writing your note"}
+              </p>
+            </div>
           </div>
 
-        </header>
+          {/* X BUTTON */}
+          <button
+            type="button"
+            onClick={handleCloseEditor}
+            className="flex h-9 w-9 items-center justify-center rounded-full text-2xl text-gray-500 transition hover:bg-gray-100 hover:text-gray-800"
+          >
+            ×
+          </button>
+        </div>
 
-        {/* BODY */}
+        {/* =================================================
+            MAIN CONTENT
+        ================================================= */}
 
-        <div className="grid min-h-0 flex-1 overflow-y-auto lg:grid-cols-[1fr_310px]">
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          {/* ===============================================
+              LEFT SIDEBAR
+          =============================================== */}
 
-          {/* EDITOR */}
+          <div className="hidden w-64 shrink-0 overflow-y-auto border-r border-gray-200 bg-gray-50 p-5 md:block">
+            {/* NOTEBOOK */}
 
-          <section className="min-w-0 p-5 sm:p-7">
-
-            {/* TITLE */}
-
-            <div className="mb-5">
-
-              <label className="mb-2 block text-[10px] font-extrabold uppercase tracking-[0.18em] text-violet-600">
-                Note Title
+            <div className="mb-6">
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Notebook
               </label>
+
+              <select
+                value={notebook}
+                onChange={(e) =>
+                  setNotebook(e.target.value)
+                }
+                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+              >
+                {notebooks.map(
+                  (item) => (
+                    <option
+                      key={item}
+                      value={item}
+                    >
+                      {item}
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
+
+            {/* TAG */}
+
+            <div className="mb-6">
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Tag
+              </label>
+
+              <input
+                type="text"
+                value={tag}
+                onChange={(e) =>
+                  setTag(e.target.value)
+                }
+                placeholder="Add tag..."
+                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+              />
+            </div>
+
+            {/* TAG COLOR */}
+
+            <div className="mb-6">
+              <label className="mb-3 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Tag Color
+              </label>
+
+              <div className="flex flex-wrap gap-2">
+                {tagColors.map(
+                  (color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() =>
+                        setTagColor(color)
+                      }
+                      className={`h-7 w-7 rounded-full border-2 transition ${
+                        tagColor === color
+                          ? "scale-110 border-gray-800"
+                          : "border-white"
+                      }`}
+                      style={{
+                        backgroundColor:
+                          color,
+                      }}
+                    />
+                  )
+                )}
+              </div>
+            </div>
+{/* NOTE COLOR */}
+
+<div className="mb-6">
+  <label className="mb-3 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+    Note Color
+  </label>
+
+  {/* PRESET + CUSTOM COLOR */}
+  <div className="flex flex-wrap gap-2">
+
+    {noteColors.map((color) => (
+      <button
+        key={color}
+        type="button"
+        onClick={() => setNoteColor(color)}
+        title={color}
+        className={`h-8 w-8 rounded-full border-2 transition ${
+          noteColor === color
+            ? "scale-110 border-violet-600 shadow-md"
+            : "border-gray-200 hover:scale-105"
+        }`}
+        style={{
+          backgroundColor: color,
+        }}
+      />
+    ))}
+
+    {/* CUSTOM COLOR PICKER */}
+    <label
+      title="Choose your own color"
+      className={`relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-2 border-dashed border-violet-400 bg-white text-lg transition hover:scale-105 ${
+        !noteColors.includes(noteColor)
+          ? "scale-110 border-violet-600"
+          : ""
+      }`}
+    >
+      🎨
+
+      <input
+        type="color"
+        value={noteColor}
+        onChange={(e) =>
+          setNoteColor(e.target.value)
+        }
+        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+      />
+    </label>
+  </div>
+
+  {/* SELECTED COLOR */}
+  <div className="mt-3 flex items-center gap-2">
+    <div
+      className="h-5 w-5 rounded-full border border-gray-300"
+      style={{
+        backgroundColor: noteColor,
+      }}
+    />
+
+    <span className="text-xs text-gray-500">
+      Selected: {noteColor}
+    </span>
+  </div>
+</div>
+
+            {/* AI TOOLS */}
+
+            <div>
+              <label className="mb-3 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                AI Assistant
+              </label>
+
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  disabled={aiLoading}
+                  onClick={() =>
+                    handleAIAction(
+                      "summarize"
+                    )
+                  }
+                  className="flex w-full items-center gap-2 rounded-xl bg-violet-50 px-3 py-2.5 text-left text-sm font-medium text-violet-700 transition hover:bg-violet-100 disabled:opacity-50"
+                >
+                  ✨ Summarize
+                </button>
+
+                <button
+                  type="button"
+                  disabled={aiLoading}
+                  onClick={() =>
+                    handleAIAction(
+                      "title"
+                    )
+                  }
+                  className="flex w-full items-center gap-2 rounded-xl bg-violet-50 px-3 py-2.5 text-left text-sm font-medium text-violet-700 transition hover:bg-violet-100 disabled:opacity-50"
+                >
+                  🪄 Generate Title
+                </button>
+
+                <button
+                  type="button"
+                  disabled={aiLoading}
+                  onClick={() =>
+                    handleAIAction(
+                      "tags"
+                    )
+                  }
+                  className="flex w-full items-center gap-2 rounded-xl bg-violet-50 px-3 py-2.5 text-left text-sm font-medium text-violet-700 transition hover:bg-violet-100 disabled:opacity-50"
+                >
+                  🏷️ Generate Tags
+                </button>
+
+                <button
+                  type="button"
+                  disabled={aiLoading}
+                  onClick={() =>
+                    handleAIAction(
+                      "improve"
+                    )
+                  }
+                  className="flex w-full items-center gap-2 rounded-xl bg-violet-50 px-3 py-2.5 text-left text-sm font-medium text-violet-700 transition hover:bg-violet-100 disabled:opacity-50"
+                >
+                  ✍️ Improve Writing
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* ===============================================
+              EDITOR AREA
+          =============================================== */}
+
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <div
+              className="flex-1 overflow-y-auto p-6"
+              style={{
+                backgroundColor:
+                  noteColor,
+              }}
+            >
+              {/* TITLE */}
 
               <input
                 type="text"
@@ -895,614 +1150,187 @@ function NoteEditor({
                 onChange={(e) =>
                   setTitle(e.target.value)
                 }
-                placeholder="Give your note a title..."
-                className="w-full border-0 bg-transparent px-0 py-2 text-3xl font-extrabold tracking-tight text-slate-900 outline-none placeholder:text-slate-300 sm:text-4xl"
+                placeholder="Note title..."
+                className="mb-5 w-full border-none bg-transparent text-3xl font-bold text-gray-800 outline-none placeholder:text-gray-300"
               />
 
-            </div>
+              {/* MOBILE OPTIONS */}
 
-            {/* NOTEBOOK + TAG + COLOR */}
-
-            <div className="mb-5 grid gap-3 sm:grid-cols-2">
-
-              {/* NOTEBOOK */}
-
-              <div className="rounded-2xl border border-violet-100 bg-violet-50/60 p-3">
-
-                <label className="mb-1 block text-[9px] font-extrabold uppercase tracking-wider text-violet-500">
-                  Notebook
-                </label>
-
+              <div className="mb-5 grid grid-cols-1 gap-3 md:hidden">
                 <select
                   value={notebook}
                   onChange={(e) =>
-                    setNotebook(e.target.value)
+                    setNotebook(
+                      e.target.value
+                    )
                   }
-                  className="w-full bg-transparent text-sm font-bold text-slate-700 outline-none"
+                  className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none"
                 >
-
-                  {!notebooks.includes(
-                    notebook
-                  ) &&
-                    notebook && (
-                      <option value={notebook}>
-                        📁 {notebook}
-                      </option>
-                    )}
-
                   {notebooks.map(
                     (item) => (
                       <option
                         key={item}
                         value={item}
                       >
-                        📁 {item}
+                        {item}
                       </option>
                     )
                   )}
-
                 </select>
 
+                <input
+                  type="text"
+                  value={tag}
+                  onChange={(e) =>
+                    setTag(e.target.value)
+                  }
+                  placeholder="Add tag..."
+                  className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none"
+                />
               </div>
 
-              {/* COLOUR TAG */}
+              {/* TOOLBAR */}
 
-              <div className="rounded-2xl border border-fuchsia-100 bg-fuchsia-50/60 p-3">
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                {/* VOICE INPUT */}
 
-                <label className="mb-1 block text-[9px] font-extrabold uppercase tracking-wider text-fuchsia-500">
-                  Colour Tag
-                </label>
-
-                <div className="flex items-center gap-2">
-
-                  <input
-                    type="text"
-                    value={tag}
-                    onChange={(e) =>
-                      setTag(e.target.value)
-                    }
-                    placeholder="e.g. Java, Work"
-                    className="min-w-0 flex-1 rounded-xl border border-fuchsia-100 bg-white px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:border-fuchsia-300"
-                  />
-
-                  <input
-                    type="color"
-                    value={tagColor}
-                    onChange={(e) =>
-                      setTagColor(
-                        e.target.value
-                      )
-                    }
-                    title="Choose tag colour"
-                    className="h-10 w-10 shrink-0 cursor-pointer rounded-xl border-0 bg-white p-1"
-                  />
-
-                </div>
-
-                {/* TAG PREVIEW */}
-
-                <div className="mt-2">
-
-                  {tag.trim() && (
-                    <span
-                      className="inline-flex items-center rounded-full px-3 py-1 text-[10px] font-extrabold"
-                      style={{
-                        backgroundColor:
-                          `${tagColor}20`,
-                        color: tagColor,
-                        border:
-                          `1px solid ${tagColor}60`,
-                      }}
-                    >
-                      {tag}
-                    </span>
-                  )}
-
-                </div>
-
-              </div>
-
-              {/* NOTE BACKGROUND COLOR */}
-
-              <div className="rounded-2xl border border-amber-100 bg-amber-50/60 p-3 sm:col-span-2">
-
-                <label className="mb-2 block text-[9px] font-extrabold uppercase tracking-wider text-amber-600">
-                  Note Background Color
-                </label>
-
-                <div className="flex items-center gap-3">
-
-                  <input
-                    type="color"
-                    value={noteColor}
-                    onChange={(e) =>
-                      setNoteColor(
-                        e.target.value
-                      )
-                    }
-                    title="Choose note background colour"
-                    className="h-10 w-10 cursor-pointer rounded-xl border-0 bg-white p-1"
-                  />
-
-                  <div
-                    className="flex-1 rounded-xl border px-3 py-2 text-xs font-bold text-slate-600"
-                    style={{
-                      backgroundColor:
-                        noteColor,
-                    }}
-                  >
-                    Note Preview
-                  </div>
-
+                {speechSupported && (
                   <button
                     type="button"
-                    onClick={() =>
-                      setNoteColor("#FFFFFF")
+                    onClick={
+                      toggleVoiceInput
                     }
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[10px] font-bold text-slate-500 hover:bg-slate-50"
+                    className={`rounded-xl px-3 py-2 text-sm font-medium transition ${
+                      isListening
+                        ? "bg-red-100 text-red-600"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
                   >
-                    Reset
+                    {isListening
+                      ? "⏹ Stop Voice"
+                      : "🎙️ Voice Input"}
                   </button>
+                )}
 
-                </div>
+                {/* READ ALOUD */}
 
+                {activeTool ===
+                "speak" ? (
+                  <button
+                    type="button"
+                    onClick={
+                      stopSpeaking
+                    }
+                    className="rounded-xl bg-red-100 px-3 py-2 text-sm font-medium text-red-600"
+                  >
+                    ⏹ Stop Reading
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={
+                      handleReadAloud
+                    }
+                    className="rounded-xl bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-200"
+                  >
+                    🔊 Read Aloud
+                  </button>
+                )}
+
+                {/* AI BUTTONS */}
+
+                <button
+                  type="button"
+                  disabled={aiLoading}
+                  onClick={() =>
+                    handleAIAction(
+                      "summarize"
+                    )
+                  }
+                  className="rounded-xl bg-violet-100 px-3 py-2 text-sm font-medium text-violet-700 transition hover:bg-violet-200 disabled:opacity-50"
+                >
+                  ✨ AI
+                </button>
               </div>
 
-            </div>
+              {/* REACT QUILL */}
 
-            {/* EDITOR */}
+              <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                <ReactQuill
+                  ref={quillRef}
+                  theme="snow"
+                  value={content}
+                  onChange={setContent}
+                  modules={modules}
+                  placeholder="Start writing your note..."
+                  className="note-editor-quill"
+                />
+              </div>
 
-            <div className="overflow-hidden rounded-[22px] border border-violet-100 bg-white shadow-sm">
+              {/* STATS */}
 
-              <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/70 px-4 py-3">
-
-                <span className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400">
-                  Note Content
-                </span>
-
-                <div className="flex items-center gap-3 text-[10px] text-slate-400">
-
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-500">
+                <div className="flex items-center gap-4">
                   <span>
                     {wordCount} words
                   </span>
 
                   <span>
-                    {characterCount} chars
+                    {characterCount} characters
                   </span>
-
-                </div>
-
-              </div>
-
-              <ReactQuill
-                ref={quillRef}
-                theme="snow"
-                value={content}
-                onChange={setContent}
-                modules={modules}
-                placeholder="Start writing your thoughts..."
-                className="note-editor-purple"
-              />
-
-            </div>
-
-            {/* QUICK ACTIONS */}
-
-            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-
-              {/* VOICE */}
-
-              <button
-                type="button"
-                onClick={
-                  toggleVoiceInput
-                }
-                disabled={
-                  !speechSupported
-                }
-                className={`rounded-2xl border p-3 text-left transition ${
-                  isListening
-                    ? "border-red-200 bg-red-50 text-red-600"
-                    : "border-violet-100 bg-violet-50 text-violet-700 hover:bg-violet-100"
-                } disabled:cursor-not-allowed disabled:opacity-50`}
-              >
-
-                <div className="text-lg">
-                  {isListening
-                    ? "⏹️"
-                    : "🎙️"}
-                </div>
-
-                <p className="mt-1 text-xs font-extrabold">
-                  {isListening
-                    ? "Stop Voice"
-                    : "Voice Input"}
-                </p>
-
-                <p className="mt-0.5 text-[9px] text-slate-400">
-                  Speak your note
-                </p>
-
-              </button>
-
-              {/* READ */}
-
-              <button
-                type="button"
-                onClick={
-                  handleReadAloud
-                }
-                className="rounded-2xl border border-indigo-100 bg-indigo-50 p-3 text-left text-indigo-700 transition hover:bg-indigo-100"
-              >
-
-                <div className="text-lg">
-                  🔊
-                </div>
-
-                <p className="mt-1 text-xs font-extrabold">
-                  Read Aloud
-                </p>
-
-                <p className="mt-0.5 text-[9px] text-slate-400">
-                  Listen to note
-                </p>
-
-              </button>
-
-              {/* STOP */}
-
-              <button
-                type="button"
-                onClick={
-                  stopSpeaking
-                }
-                className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-left text-slate-700 transition hover:bg-slate-100"
-              >
-
-                <div className="text-lg">
-                  🔇
-                </div>
-
-                <p className="mt-1 text-xs font-extrabold">
-                  Stop Audio
-                </p>
-
-                <p className="mt-0.5 text-[9px] text-slate-400">
-                  Stop speech
-                </p>
-
-              </button>
-
-              {/* SAVE */}
-
-              <button
-                type="button"
-                onClick={
-                  handleSave
-                }
-                className="rounded-2xl bg-gradient-to-br from-violet-600 to-purple-700 p-3 text-left text-white shadow-lg shadow-violet-200 transition hover:-translate-y-0.5 hover:shadow-xl"
-              >
-
-                <div className="text-lg">
-                  💾
-                </div>
-
-                <p className="mt-1 text-xs font-extrabold">
-                  Save Note
-                </p>
-
-                <p className="mt-0.5 text-[9px] text-purple-200">
-                  Save changes
-                </p>
-
-              </button>
-
-            </div>
-
-          </section>
-
-          {/* SMART SIDEBAR */}
-
-          <aside className="border-t border-violet-100 bg-[#faf8ff] p-5 lg:border-l lg:border-t-0 sm:p-6">
-
-            {/* AI */}
-
-            <div className="rounded-[24px] bg-gradient-to-br from-[#35116b] via-[#5b21b6] to-[#86198f] p-5 text-white shadow-xl">
-
-              <div className="flex items-center gap-3">
-
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15 text-xl backdrop-blur">
-                  ✨
                 </div>
 
                 <div>
-
-                  <h3 className="text-base font-extrabold">
-                    AI Assistant
-                  </h3>
-
-                  <p className="text-[10px] text-purple-200">
-                    Smart writing tools
-                  </p>
-
+                  {lastEdited
+                    ? `Last saved: ${lastEdited}`
+                    : "Not saved yet"}
                 </div>
-
               </div>
-
-              <p className="mt-4 text-xs leading-5 text-purple-100">
-                Use AI tools to improve,
-                summarize and organize
-                your note.
-              </p>
-
-              <div className="mt-5 space-y-2">
-
-                <AIButton
-                  icon="✦"
-                  title="Summarize Note"
-                  description="Create a quick summary"
-                  onClick={() =>
-                    handleAIAction(
-                      "summarize"
-                    )
-                  }
-                  loading={
-                    aiLoading &&
-                    activeTool ===
-                      "summarize"
-                  }
-                />
-
-                <AIButton
-                  icon="✍️"
-                  title="Improve Writing"
-                  description="Make your writing clearer"
-                  onClick={() =>
-                    handleAIAction(
-                      "improve"
-                    )
-                  }
-                  loading={
-                    aiLoading &&
-                    activeTool ===
-                      "improve"
-                  }
-                />
-
-                <AIButton
-                  icon="🏷️"
-                  title="Generate Tags"
-                  description="Find a useful category"
-                  onClick={() =>
-                    handleAIAction(
-                      "tags"
-                    )
-                  }
-                  loading={
-                    aiLoading &&
-                    activeTool === "tags"
-                  }
-                />
-
-                <AIButton
-                  icon="🪄"
-                  title="Generate Title"
-                  description="Create a smart title"
-                  onClick={() =>
-                    handleAIAction(
-                      "title"
-                    )
-                  }
-                  loading={
-                    aiLoading &&
-                    activeTool ===
-                      "title"
-                  }
-                />
-
-              </div>
-
             </div>
-
-            {/* VOICE */}
-
-            <div className="mt-4 rounded-[24px] border border-violet-100 bg-white p-5 shadow-sm">
-
-              <div className="flex items-center gap-3">
-
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-fuchsia-500 to-violet-600 text-lg text-white shadow-md">
-                  🎙️
-                </div>
-
-                <div>
-
-                  <h3 className="text-sm font-extrabold text-slate-800">
-                    Voice & Speech
-                  </h3>
-
-                  <p className="text-[10px] text-slate-400">
-                    Hands-free note taking
-                  </p>
-
-                </div>
-
-              </div>
-
-              <div className="mt-4 rounded-2xl bg-violet-50 p-4">
-
-                <div className="flex items-center justify-between">
-
-                  <span className="text-xs font-bold text-violet-700">
-                    Voice Input
-                  </span>
-
-                  <span
-                    className={`h-2.5 w-2.5 rounded-full ${
-                      isListening
-                        ? "animate-pulse bg-red-500"
-                        : speechSupported
-                        ? "bg-emerald-500"
-                        : "bg-slate-300"
-                    }`}
-                  />
-
-                </div>
-
-                <p className="mt-2 text-[10px] leading-5 text-slate-500">
-                  {isListening
-                    ? "Listening... speak naturally."
-                    : speechSupported
-                    ? "Microphone is ready."
-                    : "Speech recognition unavailable."}
-                </p>
-
-                <button
-                  type="button"
-                  onClick={
-                    toggleVoiceInput
-                  }
-                  disabled={
-                    !speechSupported
-                  }
-                  className={`mt-3 w-full rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${
-                    isListening
-                      ? "bg-red-500 text-white"
-                      : "bg-violet-600 text-white hover:bg-violet-700"
-                  } disabled:cursor-not-allowed disabled:opacity-50`}
-                >
-                  {isListening
-                    ? "Stop Listening"
-                    : "Start Voice Input"}
-                </button>
-
-              </div>
-
-              <button
-                type="button"
-                onClick={
-                  handleReadAloud
-                }
-                className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-600 transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700"
-              >
-                🔊 Read My Note Aloud
-              </button>
-
-            </div>
-
-            {/* NOTE INFORMATION */}
-
-            <div className="mt-4 rounded-[24px] border border-slate-100 bg-white p-5 shadow-sm">
-
-              <p className="text-[9px] font-extrabold uppercase tracking-[0.18em] text-slate-400">
-                Note Information
-              </p>
-
-              <div className="mt-4 space-y-3">
-
-                <InfoRow
-                  label="Notebook"
-                  value={
-                    notebook ||
-                    "Personal"
-                  }
-                />
-
-                <div className="flex items-center justify-between gap-3">
-
-                  <span className="text-[10px] font-medium text-slate-400">
-                    Tag
-                  </span>
-
-                  {tag ? (
-                    <span
-                      className="max-w-[150px] truncate rounded-full px-2.5 py-1 text-[9px] font-extrabold"
-                      style={{
-                        backgroundColor:
-                          `${tagColor}20`,
-                        color: tagColor,
-                        border:
-                          `1px solid ${tagColor}50`,
-                      }}
-                    >
-                      {tag}
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-bold text-slate-700">
-                      No Tag
-                    </span>
-                  )}
-
-                </div>
-
-                <InfoRow
-                  label="Background"
-                  value={noteColor}
-                />
-
-                <InfoRow
-                  label="Words"
-                  value={wordCount}
-                />
-
-                <InfoRow
-                  label="Characters"
-                  value={
-                    characterCount
-                  }
-                />
-
-              </div>
-
-            </div>
-
-          </aside>
-
+          </div>
         </div>
 
-        {/* FOOTER */}
+        {/* =================================================
+            FOOTER
+        ================================================= */}
 
-        <footer className="flex flex-col-reverse gap-3 border-t border-slate-100 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-7">
-
-          <div className="flex items-center gap-2 text-[10px] text-slate-400">
-
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-
-            Changes are automatically saved
-
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 bg-white px-6 py-4">
+          <div className="text-xs text-gray-500">
+            Auto-save is enabled
           </div>
 
-          <div className="flex justify-end gap-3">
+          <div className="flex items-center gap-3">
+            {/* CANCEL */}
 
             <button
               type="button"
-              onClick={onClose}
-              className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
+              onClick={handleCloseEditor}
+              className="rounded-xl border border-gray-200 px-5 py-2.5 text-sm font-semibold text-gray-600 transition hover:bg-gray-100"
             >
               Cancel
             </button>
 
+            {/* SAVE */}
+
             <button
               type="button"
               onClick={handleSave}
-              className="rounded-xl bg-gradient-to-r from-violet-600 to-purple-700 px-6 py-2.5 text-xs font-extrabold text-white shadow-lg shadow-violet-200 transition hover:-translate-y-0.5 hover:shadow-xl"
+              className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700"
             >
               ✓ Save Note
             </button>
-
           </div>
-
-        </footer>
-
+        </div>
       </div>
     </div>
   );
 }
 
 // =========================================================
-// SAFE HTML
+// HELPER
 // =========================================================
 
-function escapeHtml(value = "") {
+function escapeHtml(value) {
   return String(value)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -1512,70 +1340,7 @@ function escapeHtml(value = "") {
 }
 
 // =========================================================
-// AI BUTTON
+// EXPORT
 // =========================================================
-
-function AIButton({
-  icon,
-  title,
-  description,
-  onClick,
-  loading,
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={loading}
-      className="flex w-full items-center gap-3 rounded-xl bg-white/10 p-3 text-left transition hover:bg-white/20 disabled:opacity-60"
-    >
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/15 text-sm">
-        {loading ? "..." : icon}
-      </span>
-
-      <span className="min-w-0 flex-1">
-
-        <span className="block text-xs font-extrabold">
-          {loading
-            ? "Working..."
-            : title}
-        </span>
-
-        <span className="mt-0.5 block text-[9px] text-purple-200">
-          {description}
-        </span>
-
-      </span>
-
-      <span className="text-xs text-purple-200">
-        →
-      </span>
-
-    </button>
-  );
-}
-
-// =========================================================
-// INFO ROW
-// =========================================================
-
-function InfoRow({
-  label,
-  value,
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-
-      <span className="text-[10px] font-medium text-slate-400">
-        {label}
-      </span>
-
-      <span className="max-w-[150px] truncate text-[10px] font-bold text-slate-700">
-        {value}
-      </span>
-
-    </div>
-  );
-}
 
 export default NoteEditor;
